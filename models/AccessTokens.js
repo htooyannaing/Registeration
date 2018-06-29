@@ -107,8 +107,6 @@ TokenScheme.statics.updateResetToken = async function(id, token, token_type, gen
             }
         }
     } catch (e) {
-        console.log(e);
-        
         return {
             "status" : 409,
             "response" : e.__proto__.name + " : " + e.message
@@ -119,15 +117,11 @@ TokenScheme.statics.updateResetToken = async function(id, token, token_type, gen
 TokenScheme.statics.deleteOtherToken = async function(user_id, token) {
     try {
         var deleteRes = await AccessToken.deleteMany( { user_id :  user_id, token: {$ne : token} } )
-        console.log(deleteRes);
-        
         return {
             "status" : 200,
             "response" : deleteRes
         }
     } catch (e) {
-        console.log(e);
-        
         return {
             "status" : 409,
             "response" : e.__proto__.name + " : " + e.message
