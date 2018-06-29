@@ -48,9 +48,6 @@ UserProfileSchema.statics.register = async function(userID, req){
     try {
         var user_id = userID
 
-        console.log(req);
-        
-
         /** Personal Detail */
         var personal_name = req.personal.name
         var personal_nrc = req.personal.nrc
