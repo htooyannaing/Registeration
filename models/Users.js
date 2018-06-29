@@ -13,8 +13,7 @@ var UserSchema = new mongoose.Schema({
         unique : true
     },
     password: {
-        type : String,
-        minlength : 8,
+        type : String
     },
     usertype_id: mongoose.Schema.Types.ObjectId,
     status_flag: String,
@@ -24,63 +23,70 @@ var UserSchema = new mongoose.Schema({
     }
 });
 
-
-
 UserSchema.statics.register = async function(req) {
     var user = new User()
     var mail = req.body.mail
+    var password = req.body.password
     
     try {
         var mailVerified = await User.findByEmail(mail);
         if(mailVerified.status === 401) {
-            var regData = new User({
-                mail: req.body.mail,
-                password: req.body.password,
-                usertype_id: req.body.usertype_id,
-                status_flag: 1
-            })
-            var result = await regData.save()
-            if(result) {
-                var userProfileRes = await UserProfile.register(result._id, req.body.userprofile)
-                if(userProfileRes.status == 409) {
+            if(await user.passwordValidation(password)) {
+                var regData = new User({
+                    mail: req.body.mail,
+                    password: req.body.password,
+                    usertype_id: req.body.usertype_id,
+                    status_flag: 1
+                })
+                var result = await regData.save()
+                if(result) {
+                    var userProfileRes = await UserProfile.register(result._id, req.body.userprofile)
+                    if(userProfileRes.status == 409) {
+                        return {
+                            "status" : 400,
+                            "response" : "Sign up failed in process. Please check your provided information"
+                        }
+                    } else {
+                        var randomToken = user.generateEightDigitRandonToken()
+                        var getHeader = user.getHeaderDetail(req)
+    
+                        var tokenData = await AccessToken.register(
+                            randomToken, 
+                            2, 
+                            result.user_id,
+                            mail,
+                            getHeader.ip,
+                            getHeader.browser,
+                            getHeader.opration_system,
+                            req.body.location,
+                            getHeader.accept_language
+                        )
+    
+                        /** Send Mail Require */
+    
+                        return {
+                            "status" : tokenData.status,
+                            "x_auth" : tokenData.response.token,
+                            "response" : userProfileRes.response
+                        }
+                    }
+                } else {
                     return {
                         "status" : 400,
                         "response" : "Sign up failed in process. Please check your provided information"
                     }
-                } else {
-                    var randomToken = user.generateEightDigitRandonToken()
-                    var getHeader = user.getHeaderDetail(req)
-
-                    var tokenData = await AccessToken.register(
-                        randomToken, 
-                        2, 
-                        result.user_id,
-                        mail,
-                        getHeader.ip,
-                        getHeader.browser,
-                        getHeader.opration_system,
-                        req.body.location,
-                        getHeader.accept_language
-                    )
-
-                    /** Send Mail Require */
-
-                    return {
-                        "status" : tokenData.status,
-                        "x_auth" : tokenData.response.token,
-                        "response" : userProfileRes.response
-                    }
+                }
+                return {
+                    "status" : 200,
+                    "response" : result
                 }
             } else {
                 return {
                     "status" : 400,
-                    "response" : "Sign up failed in process. Please check your provided information"
+                    "response" : "Password must contain at least one lowercase letter, one upper case letter, one numeric, one special character and minium length 8"
                 }
             }
-            return {
-                "status" : 200,
-                "response" : result
-            }
+            
         } else {
             return {
                 "status" : mailVerified.status,
@@ -148,73 +154,97 @@ UserSchema.statics.resetPassword = async function(mail, req, password, confirmPa
             "response" : mailVerified.response
         }
     } else {
-        var findUser = await AccessToken.findByToken(req.headers.x_auth)
-        if(findUser.length == 0) {
-            return {
-                "status" : 400,
-                "response" : "Access Token Not Found"
-            }
-        } else {
-            var resertConfirm = await AccessToken.getResetConfirmed(mail)
-
-            if(!resertConfirm) {
+        if(await user.passwordValidation(password)) {
+            var findUser = await AccessToken.findByToken(req.headers.x_auth)
+            if(findUser.length == 0) {
                 return {
                     "status" : 400,
-                    "response" : "Error from ဘာမှန်းမသိတဲ့ method ;)"
+                    "response" : "Access Token Not Found"
                 }
             } else {
-                await AccessToken.updateForgetPasswordToResetPassword(mail)
-                var id = resertConfirm._id
-                var user_id = mailVerified.user._id
-                var randomToken = user.generateEightDigitRandonToken()
-                var getHeader = user.getHeaderDetail(req)
-                var generated_time = ""
+                var resertConfirm = await AccessToken.getResetConfirmed(mail)
 
-                if(password === confirmPassword) {
-                    var tokenData = await AccessToken.updateResetToken(
-                        id,
-                        randomToken, 
-                        4, 
-                        generated_time,
-                        getHeader.ip,
-                        getHeader.browser,
-                        getHeader.opration_system,
-                        req.body.location,
-                        getHeader.accept_language
-                    )
-                    if(tokenData.status != 200) {
-                        return {
-                            "status" : tokenData.status,
-                            "response" : tokenData.response
-                        }
-                    } else {
-                        // Code For Send Mail Here
-                        await User.updateUserPassword(mail, password);
-                        if(deleteOtherToken === true) {
-                            var delRes = await AccessToken.deleteOtherToken(user_id, randomToken);
-                            if(delRes.status !== 200) {
-                                return {
-                                    "status" : delRes.status,
-                                    "response" : delRes.response
+                if(!resertConfirm) {
+                    return {
+                        "status" : 400,
+                        "response" : "Error from ဘာမှန်းမသိတဲ့ method ;)"
+                    }
+                } else {
+                    await AccessToken.updateForgetPasswordToResetPassword(mail)
+                    var id = resertConfirm._id
+                    var user_id = mailVerified.user._id
+                    var randomToken = user.generateEightDigitRandonToken()
+                    var getHeader = user.getHeaderDetail(req)
+                    var generated_time = ""
+
+                    if(password === confirmPassword) {
+                        var tokenData = await AccessToken.updateResetToken(
+                            id,
+                            randomToken, 
+                            4, 
+                            generated_time,
+                            getHeader.ip,
+                            getHeader.browser,
+                            getHeader.opration_system,
+                            req.body.location,
+                            getHeader.accept_language
+                        )
+                        if(tokenData.status != 200) {
+                            return {
+                                "status" : tokenData.status,
+                                "response" : tokenData.response
+                            }
+                        } else {
+                            // Code For Send Mail Here
+                            await User.updateUserPassword(mail, password);
+                            if(deleteOtherToken === true) {
+                                var delRes = await AccessToken.deleteOtherToken(user_id, randomToken);
+                                if(delRes.status !== 200) {
+                                    return {
+                                        "status" : delRes.status,
+                                        "response" : delRes.response
+                                    }
                                 }
                             }
+                            return {
+                                "status" : 200,
+                                "response" : "Password Changed Successful"
+                            }
                         }
+                        
+                    } else {
                         return {
-                            "status" : 200,
-                            "response" : "Password Changed Successful"
+                            "status" : 400,
+                            "response" : "password and confirm password doesn't match"
                         }
                     }
                     
-                } else {
-                    return {
-                        "status" : 400,
-                        "response" : "password and confirm password doesn't match"
-                    }
                 }
-                
+            }
+        } else {
+            return {
+                "status" : 400,
+                "response" : "Password must contain at least one lowercase letter, one upper case letter, one numeric, one special character and minium length 8"
             }
         }
+        
     }   
+}
+
+UserSchema.methods.passwordValidation = async function(password) {
+    /**
+     *  ^ 	                The password string will start this way
+     * (?=.*[a-z]) 	        The string must contain at least 1 lowercase alphabetical character
+     * (?=.*[A-Z]) 	        The string must contain at least 1 uppercase alphabetical character
+     * (?=.*[0-9]) 	        The string must contain at least 1 numeric character
+     * (?=.*[!@#\$%\^&\*]) 	The string must contain at least one special character, but we are escaping reserved RegEx characters to avoid conflict
+     * (?=.{8,}) 	        The string must be eight characters or longer
+     */
+    var passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#\$%\^&\*])(?=.{8,})/  
+    if(passRegex.test(password)) {
+        return true
+    }
+    return false
 }
 
 UserSchema.statics.updateUserPassword = async function(mail, password) {
@@ -228,9 +258,7 @@ UserSchema.statics.updateUserPassword = async function(mail, password) {
             "status" : 200,
             "response" : updatePassword
         }
-    } catch (e) {
-        console.log(e);
-        
+    } catch (e) {        
         return {
             "status" : 409,
             "response" : e.__proto__.name + " : " + e.message

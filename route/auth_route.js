@@ -7,7 +7,7 @@ router.post('/signUp', async (req, res) => {
         var result = await User.register(req)
         var a = req.body.mail
         var b = req.body.password
-        res.status(result.status).send(result.response);
+        res.status(result.status).header('x_auth', result.x_auth).send(result.response);
     } catch (e) {
         res.status(400).send(e.message)
     }
@@ -16,7 +16,7 @@ router.post('/signUp', async (req, res) => {
 router.post('/sign', async (req, res) => {
     try{
         var result = await User.sign(req)
-        res.status(result.status).header('x-auth', result.x_auth).send(result.response)
+        res.status(result.status).header('x_auth', result.x_auth).send(result.response)
     }catch(e) {
         res.status(400).send(e.__proto__.name + " : " + e.message)
     }
